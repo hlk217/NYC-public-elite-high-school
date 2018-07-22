@@ -88,7 +88,7 @@ Is this data good enough to be the gold standard to use to find out what is the 
 
 #### After students enroll, register and take the exam, how many are they actually got the offer from any special high school? 
 - From New York Times, there is an article that showing the offerred number information.
-- The New York Times article can be viewed [here](https://www.nytimes.com/interactive/2018/06/29/nyregion/nyc-high-schools-middle-schools-shsat-students.html?rref=collection%2Fbyline%2Fjasmine-c.-lee&action=click&contentCollection=undefined&region=stream&module=stream_unit&version=latest&contentPlacement=1&pgtype=collection). 
+- The New York Times article can be viewed [**here**](https://www.nytimes.com/interactive/2018/06/29/nyregion/nyc-high-schools-middle-schools-shsat-students.html?rref=collection%2Fbyline%2Fjasmine-c.-lee&action=click&contentCollection=undefined&region=stream&module=stream_unit&version=latest&contentPlacement=1&pgtype=collection). 
 
 Now, parse the htm(xml) and extract the table from the news.
 I found:
@@ -170,7 +170,7 @@ I found:
 ```
 
 ```
-## [1] "10 fold cross-validated R2 =  0.628975608140297"
+## [1] "10 fold cross-validated R2 =  0.627812825536522"
 ```
 
 ![](Data_Analysis_files/figure-html/unnamed-chunk-10-1.png)<!-- -->
@@ -222,4 +222,9 @@ The field I have choosen are below:
 
 
 
+#### [**Shiny App**](https://hueyling.shinyapps.io/help-PASSNYC/)
+<div class="figure">
+<img src="www/shinyIO.png" alt="Interactive shiny app to recommend school improvment." width="100%" />
+<p class="caption">Interactive shiny app to recommend school improvment.</p>
+</div>
 
