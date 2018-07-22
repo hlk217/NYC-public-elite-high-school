@@ -20,4 +20,4 @@ Identify the school/area of NYC needs PASSNYC's attention to improve the diverse
 
 ## Shiny website
 
-Create a [**shiny website**] (https://hueyling.shinyapps.io/help-PASSNYC/) to explore the data and recommend the potential schools for PASSNYC to focus on.
+Create a [shiny website] (https://hueyling.shinyapps.io/help-PASSNYC/) to explore the data and recommend the potential schools for PASSNYC to focus on.
