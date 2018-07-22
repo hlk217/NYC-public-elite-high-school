@@ -22,8 +22,7 @@ function(input, output, session) {
         attribution = 'Maps by <a href="http://www.mapbox.com/">Mapbox</a>'
       ) %>%
       setView(lng = -73.9663211, lat = 40.7777476, zoom = 12) 
-      #addProviderTiles("Stamen.Toner") %>% 
-      #addProviderTiles("OpenTopoMap") %>% 
+     
       
   })
 
@@ -41,6 +40,8 @@ function(input, output, session) {
           longt >= lngRng[1] & longt <= lngRng[2]
       )
   })
+
+  
 
   output$scatterProficiency <- renderGvis({
     
@@ -70,14 +71,16 @@ function(input, output, session) {
   })
   
   
-  # This observer is responsible for maintaining the circles, marker and legend,
+  
+  
+  # This observer is responsible for maintaining the circles and legend,
   # according to the variables the user has chosen to map to color and size.
-  # based on the prediction value, the user can ID the potentail school by placing markers
   observe({
    
     colorBy <- input$color
     sizeBy <- input$size
     
+   
     colorData <- zipdata[[colorBy]]
     pal <- colorBin("viridis", colorData, 7, pretty = FALSE)
     
@@ -85,7 +88,8 @@ function(input, output, session) {
     
     radius <- radiusData / max(radiusData, na.rm = T) * 1000
     
-    # 
+    
+    
     baseMap <- leafletProxy("map", data = zipdata) %>% clearShapes()
     if (input$show){
       baseMap %>%  
@@ -95,13 +99,53 @@ function(input, output, session) {
                 layerId="colorLegend")
     }
     
-   if (input$addmarker){
-      markerLayerLocInfo <- getMarkerLocation(zipdata, input$predRange[1], input$predRange[2], input$black, input$white, input$asian, input$hispanic)
+    
+    
+    if (input$addmarker){
+      markerLayerLocInfo <- getMarkerLocation(zipdata, input$predRange[1], input$predRange[2], T, T, T, T)
       
-      baseMap %>% 
-        removeMarker(layerId = ~dbn ) %>% 
-        addMarkers(lng=markerLayerLocInfo$longt, lat=markerLayerLocInfo$latt, popup=paste("Predict Offer Ratio =", markerLayerLocInfo$predictedOfferRatio), layerId = markerLayerLocInfo$dbn)
+      if (input$markerColor == "eth.group"){
+        
+        icons <- awesomeIcons(
+          icon = 'ios-close',
+          iconColor = 'black',
+          library = 'ion',
+          markerColor = as.character(getEthGroupColor(markerLayerLocInfo))
+        )
+        
+        baseMap %>% 
+          removeMarker(layerId = ~dbn ) %>% 
+          addAwesomeMarkers(lng=markerLayerLocInfo$longt, lat=markerLayerLocInfo$latt, icon=icons ,
+                            popup=paste("Predict Offer Ratio =", markerLayerLocInfo$predictedOfferRatio), 
+                            layerId = markerLayerLocInfo$dbn,
+                            label=markerLayerLocInfo$ethnicity
+          )  
+          #setView(markerLayerLocInfo$longt[1], markerLayerLocInfo$latt[1], zoom = 12) 
+        
+      }else if ( input$markerColor == "ela.math.group" ){
+        
+        icons <- awesomeIcons(
+          icon = 'ios-close',
+          iconColor = 'black',
+          library = 'ion',
+          markerColor = as.character(getELAMathGroupColor(markerLayerLocInfo))
+        )
+        
+        baseMap %>% 
+          removeMarker(layerId = ~dbn ) %>% 
+          addAwesomeMarkers(lng=markerLayerLocInfo$longt, lat=markerLayerLocInfo$latt, icon=icons ,
+                            popup=paste("Predict Offer Ratio =", markerLayerLocInfo$predictedOfferRatio), 
+                            layerId = markerLayerLocInfo$dbn,
+                            label=markerLayerLocInfo$ela.math.group
+          )  
+      }else{
+        baseMap %>% 
+          removeMarker(layerId = ~dbn ) %>% 
+          addMarkers(lng=markerLayerLocInfo$longt, lat=markerLayerLocInfo$latt, popup=paste("Predict Offer Ratio =", markerLayerLocInfo$predictedOfferRatio), layerId = markerLayerLocInfo$dbn)
+        
+      }
       
+        
     }else(
       baseMap %>% 
         removeMarker(layerId = ~dbn )
@@ -110,12 +154,13 @@ function(input, output, session) {
   })
 
   
+  
   # Show a popup at the given location
   showSchoolPopup <- function(name, lat, lng) {
     selectedSchool <- cleanTable[ cleanTable$name == name, ]
     
     content <- as.character(tagList(
-      tags$h4("Name:", selectedSchool$name),
+      tags$h4("Name:", selectedSchool$name, "(", selectedSchool$dbn,")"),
       tags$strong(HTML(sprintf("%s, %s",
           selectedSchool$city, selectedSchool$zip
       ))), tags$br(),
