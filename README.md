@@ -17,3 +17,7 @@ Download the csv files from [Kaggle](https://www.kaggle.com/passnyc/data-science
 ## Objective
 
 Identify the school/area of NYC needs PASSNYC's attention to improve the diverse group of students that attend the specialized high schools.
+
+## Shiny website
+
+Create a shiny website to explore the data and recommend the potential schools for PASSNYC to focus on.
