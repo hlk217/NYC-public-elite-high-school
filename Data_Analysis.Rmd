@@ -1,0 +1,648 @@
+---
+title: "Improve student diversity of NYC Elite school."
+author: "HUEYLING KAO"
+output: 
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 2
+    keep_md: true
+    number_sections: false
+ 
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+```
+
+## Introduction 
+
+![High school education](http://img.61gequ.com/allimg/180326/122016-1P326134918.jpg)
+
+
+
+This is a Kaggle challenge. Aiming to help an not-for-profit organization (PASSNYC) determine which schools need their services the most.
+
+New York City is home to some of the most impressive educational institutions in the world, yet in recent years, the City’s specialized high schools - institutions with historically transformative impact on student outcomes - have seen a shift toward more homogeneous student body demographics.
+
+How can we identify students within New York City’s under-performing school districts ? 
+By focusing efforts in under-performing areas that are historically underrepresented in SHSAT registration, PASSNYC will help pave the path to specialized high schools for a more diverse group of students.
+
++ Download the csv files from [Kaggle](https://www.kaggle.com/passnyc/data-science-for-good/downloads/data-science-for-good.zip/3) 
+
+## Objective
+
+Identify the school/area of NYC needs PASSNYC's attention to improve the diverse group of students that attend the specialized high schools.
+
+```{r load_library, echo=FALSE, message=FALSE, warning=FALSE }
+
+library(tidyverse)
+library(leaflet)
+library(GGally)
+library(mapview) #mapshot the leaflet output to a static image file
+library(knitr) #need to draw tables in the web: kabble function
+
+```
+
+
+```{r load_data, echo=FALSE, message=FALSE, warning=FALSE, cache=TRUE}
+
+raw.df.school <- readr::read_csv("./data/2016 School Explorer.csv")
+raw.df.shsat <- readr::read_csv("./data/D5 SHSAT Registrations and Testers.csv")
+
+```
+
+
+## Kaggle Raw Data
+
+- **D5 SHSAT Registrations and Testers.csv** : This file contains informatioin such as
+  + DBN
+  + School name
+  + Year of SHST
+  + Grade level
+  + Number of students who Enrollment on 10/31
+  + Number of students who registered for the SHSAT
+  + Number of students who took the SHSAT
+  
+```{r, echo=FALSE, results='asis'}
+#kable(raw.df.shsat[1:5,], caption="D5 Registration and Testers")
+```
+
+- **2016 School Explorer.csv** : This file contains information such as 
+  + Student Attendance Rate : total number of days attended by all students / total number of days on register for all students
+  + Percent of Students Chronically Absent : Missing 10% of school days - or 18 days+ per year in a 180-day school year
+  + Collaborative Teachers (% and Rating ) : How well teachers participate in opportunities to develop, grow, and contribute to the continuous improvement of the school community.
+  + Supportive Environment ( % and Rating) : How well the school establishes a culture where students feel safe, challenged to grow, and supported to meet high expectations.
+  + Effective School Leadership ( % and Rating) : How well school leadership inspires the school community with a clear instructional vision and effectively distributes leadership to realize this vision.
+  + Strong Family-Community Ties ( % and Rating) : How well the school forms effective partnerships with families to improve the school.
+  + Trust (% and Rating)
+  + Average ELA (English Language Arts) Proficiency 
+  + Average Math Proficiency
+  + Student Ethnicity: (Percent Black, Percent White, Percent Hispanic, Percent Asian)
+  + School general information (Income, is community school? , geographic locations, name, dbn)
+
+```{r, echo=FALSE, results='asis'}
+#kable(raw.df.school[1:5,c(4,11,16,18, 26, 40, 41)], caption="2016 School info")
+```
+
+
+
+```{r preprocessing, echo=FALSE, warning=FALSE}
+#Convert all the column names to lower cases and rename the columns that containing empty space.
+#+ Convert the `school.income.estimate` column from character to numeric format and rename it `income`. 
+#+ Convert `community.school?` column from character to boolean format and rename it `is.community`.
+#+ Convert all the column that containing `%`, `percent`, `rate` to a numeric format. E.g. 97% -> 0.97.
+
+
+# 1. Convert all the column names to lower cases and rename the columns that have empty space.
+
+colName = tolower( colnames(raw.df.school) ) 
+colName = gsub(" ", ".", colName , perl=TRUE)
+colnames(raw.df.school) <- colName
+
+colName = tolower( colnames(raw.df.shsat) ) 
+colName = gsub(" ", ".", colName , perl=TRUE)
+colnames(raw.df.shsat) <- colName
+
+# 1.1 Convert the school.income.estimate column from character to numeric format and rename the column to income.
+raw.df.school$income <- as.numeric(gsub('[$,]', '', raw.df.school$school.income.estimate))
+# 1.2 Convert `community.school?` column from character to boolean format and rename it `is.community`.
+raw.df.school$is.community <- as.logical(raw.df.school$`community.school?` == "Yes")
+# 1.3 Convert all the column that containing `%`, percent, rate to a numeric format. E.g. 97% -> 0.97.
+
+for ( col in colnames(raw.df.school)){
+  x <- dplyr::filter(raw.df.school, grepl('%|percent|rate', col))
+  if ( nrow(x) > 0 ){
+    #raw.df.school[,col] <- as.numeric(raw.df.school[,col])
+    #print(col)
+    raw.df.school[[col]] <- as.numeric(gsub('[%]$', '', raw.df.school[[col]] )) / 100
+  }
+}
+#[1] "percent.ell"
+#[1] "percent.asian"
+#[1] "percent.black"
+#[1] "percent.hispanic"
+#[1] "percent.black./.hispanic"
+#[1] "percent.white"
+#[1] "student.attendance.rate"  -- NAs introduced by coercion
+#[1] "percent.of.students.chronically.absent" -- NAs introduced by coercion
+#[1] "rigorous.instruction.%" -- NAs introduced by coercion
+#[1] "collaborative.teachers.%" -- NAs introduced by coercion
+#[1] "supportive.environment.%" -- NAs introduced by coercion
+#[1] "effective.school.leadership.%" -- NAs introduced by coercion
+#[1] "strong.family-community.ties.%" -- NAs introduced by coercion
+#[1] "trust.%" -- NAs introduced by coercion
+#Some field does contain NAs. Now keep all but need to be careful about some of the later analysis.
+
+for ( col in colnames(raw.df.school)){
+  x <- dplyr::filter(raw.df.school, grepl('average', col))
+  if ( nrow(x) > 0 ){
+    #raw.df.school[,col] <- as.numeric(raw.df.school[,col])
+    #print(col)
+    raw.df.school[[col]] <- as.numeric( raw.df.school[[col]] )
+  }
+}
+
+#str(raw.df.school)
+
+# 3. Impute the missing values and see how many records left.  # 1247 / 1272 schools
+raw.df.school.clean <- raw.df.school %>% 
+  filter( !is.na(student.attendance.rate) &
+        !is.na(percent.of.students.chronically.absent) &
+        !is.na(`collaborative.teachers.%`) &
+        !is.na(`rigorous.instruction.%`) &
+        !is.na(`supportive.environment.%`) &
+        !is.na(`effective.school.leadership.%`) &
+        !is.na(`strong.family-community.ties.%`) &
+        !is.na(`trust.%`) 
+        )
+
+raw.df.shsat.clean <- raw.df.shsat %>%  
+  mutate(total = `enrollment.on.10/31`, 
+         year = year.of.shst , 
+         grade = grade.level, 
+         taken = number.of.students.who.took.the.shsat, 
+         register = number.of.students.who.registered.for.the.shsat) %>% 
+  select(dbn, year, grade, total, taken, register)
+
+#unique(raw.df.shsat.clean$dbn)  #28 schools contains shsat info
+#length(unique(raw.df.school.clean$location.code)) #1247 schools
+
+```
+
+## Data Visualization 
+
+#### Overall trend of the SHSAT take ratio change between 2013 and 2016.
+
+- Area plot: Schools Ratio distribution by year and grade
+
+Conclusion?
+
++ Most of students enroll, register, and take their SHSAT at 8th grade. 
++ There are quite a lot of students enroll at 9th grade but few ends up register and take it. However, if 9th grade student registered , large porportion of registered students will end up take the exam. Students register and take the exam at 9th grade may aim for transferring to different schools.
++ At 2014, there are more students enroll and register SHSAT exam. However, the number of students take the SAT is pretty constant.
++ 8th grade SHSAT ratio should be representitive for the real situation.
+
++ In general, the SHSAT taken ratio is less than 25%. 
++ At year 2015 and 2016, the overall student SHSAT taken ratio after register is improving.
+
+Potential problems: sample size is too small. 
++ This sheet only contain 28 schools information and look like upper Mahattan centered. 
++ `COLUMBIA SECONDARY SCHOOL` is the top school for SHSAT in terms of students enroll, register and take the exam. 
+
+Is this data good enough to be the gold standard to use to find out what is the best indicators ?
+
+
+```{r echo=FALSE}
+
+#Overall # Distribution of each year and grade that are enroll , register, taken the SHSAT
+plotData <- raw.df.shsat.clean %>% 
+  group_by(year, grade) %>% 
+  summarise(Enroll = sum(total),
+            Take = sum(taken),
+            Register = sum(register)
+            )  %>% 
+  gather(key = "prop_attr", value = "prop_est", -year, -grade )
+
+#p <- ggplot(plotData, aes( year, prop_est ))
+#p + geom_area(aes(colour = prop_attr, fill= prop_attr), position = 'identity') + ylab("# of students") + facet_wrap(~grade)
+
+
+#Most of students enroll, register, and take their SHSAT at 8th grade. 
+#There are quite a lot of students enroll at 9th grade but few ends up register and take it. However, if 9th grade student registered , large porportion of registered students will end up take the exam. Students register and take the exam at 9th grade may aim for transferring to different schools?
+#At 2014, there are more students enroll and register SHSAT exam. However, the number of students take the SAT is pretty constant.
+#8th grade SHSAT ratio should be representitive for the real situation.
+
+plotData <- raw.df.shsat.clean %>% 
+  group_by(year, grade) %>% 
+  summarise(Enroll = (sum(total)-1)/sum(total)*100,
+            Take = sum(taken)/sum(total)*100,
+            Register = sum(register)/sum(total)*100
+            )  %>% 
+  gather(key = "prop_attr", value = "prop_est", -year, -grade )
+
+p <- ggplot(plotData, aes( year, prop_est ))
+
+p + geom_area(aes(colour = prop_attr, fill= prop_attr), position = 'identity') + ylab("% students") + facet_wrap(~grade)
+
+#In general, the SHSAT taken ratio is less than 25%. 
+#At year 2015 and 2016, the overall student SHSAT taken ratio after register is improving.
+
+```
+
++ Where are those 28 schools ?
+
+```{r echo=FALSE}
+
+avgRatio <- raw.df.shsat.clean %>% 
+  group_by(year, grade) %>% 
+  summarise(overallTakeRegRatio = sum(taken)/sum(register),
+            overallRegEnrollRatio = sum(register) / sum(total),
+            overallTakeEnrollRatio = sum(taken)/sum(total)
+            )
+
+dbnRating = merge(raw.df.shsat.clean, avgRatio, by = c("year", "grade")) %>%  
+  mutate(
+    takeRegRatio = taken/register,
+    regEnrollRatio = register/total,
+    takeEnrollRatio = taken/total,
+    takenRegRatioAboveAvg = ifelse(takeRegRatio > overallTakeRegRatio, 1, 0 ),
+    regEnrollRatioAboveAvg = ifelse(regEnrollRatio > overallRegEnrollRatio, 1, 0 ),
+    takeEnrollAboveAvg = ifelse(takeEnrollRatio > overallTakeEnrollRatio, 1, 0 ),
+    sumRatio = takenRegRatioAboveAvg + regEnrollRatioAboveAvg + takeEnrollAboveAvg
+  ) %>% 
+  filter( grade == 8 ) %>% 
+  group_by(dbn) %>% 
+  summarise(crossYearSum = sum(sumRatio)) %>% 
+  arrange(desc(crossYearSum))
+
+
+#In general, the set is quite small. It only contains 28 schools. 05M362 (COLUMBIA SECONDARY SCHOOL) is the best school for SHSAT. Every index is performing above average cross years. However, due to the sample size, it may not be representitive.
+
+##Now map them with croosYearSumScores. 
+#only 21 /28 obtains records in the bigger datasheet.
+shsatSchool <- unique(raw.df.shsat.clean$dbn) 
+df <- raw.df.school %>% filter(location.code %in% shsatSchool) %>% select (location.code, longitude, latitude) %>% 
+  merge( unique( cbind( location.code = dbnRating$dbn, crossYearSum = dbnRating$crossYearSum) )  , by = "location.code" ) 
+#  merge( data.frame( location.code = shsatSchool) , by = "location.code", all.y=T)
+df$crossYearSum <- as.numeric(paste(df$crossYearSum) ) #05M362
+df.clean <- df[order(df$crossYearSum, decreasing = T),]
+
+leaflet() %>% addTiles() %>% 
+  addMarkers(lng=df.clean$longitude, lat=df.clean$latitude, popup=df.clean$location.code) %>% 
+  addProviderTiles("Esri.WorldStreetMap") ->m
+
+mapshot(m, file = "Data_Analysis_map1_Rplot.png")
+#m
+# SHSAT taken sheet is upper Mahattan centric ?
+```
+
+```{r D5, echo=FALSE, fig.cap="School location of D5 SHSAT Registrations and Testers Datasheet", out.width = '50%'}
+knitr::include_graphics("Data_Analysis_map1_Rplot.png")
+```
+
+#### After students enroll, register and take the exam, how many are they actually got the offer from any special high school? 
+- From New York Times, there is an article that showing the offerred number information.
+- The New York Times article can be viewed [**here**](https://www.nytimes.com/interactive/2018/06/29/nyregion/nyc-high-schools-middle-schools-shsat-students.html?rref=collection%2Fbyline%2Fjasmine-c.-lee&action=click&contentCollection=undefined&region=stream&module=stream_unit&version=latest&contentPlacement=1&pgtype=collection). 
+
+Now, parse the htm(xml) and extract the table from the news.
+I found:
++ There are 589 schools (dbn) in the website.
++ 537 schools have at least 1 student applied the SHSAT exam.
++ 120 of the 589 schools have at least 1 student got special high school offer after the SHSAT exam.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+library(XML)
+library(xml2)
+library(rvest)
+
+tables <- readHTMLTable("data/NYT-SHSAT-2017.htm") 
+
+extractCol = function(colIdx){
+  x <- unlist(lapply(tables, 
+                        function(t) 
+                           return (t[[colIdx]])
+                        )
+                 )
+  return (x)
+}
+
+#The first 120 records is what I want.
+nytimes <- data.frame( takeExam = as.integer(as.character(extractCol(2))), offer =as.integer(as.character(extractCol(3))) )  
+
+#Extract data-dbn attribute in the tr. Happens to be the 2nd column. This is likely not the best solution. I didn't read the library throughly. Just come up with some quick solution to extract the key to use in the analysis. Those dbn name should be able to match the 2016 School Explorer xlsx.
+rawHTML <- read_html("data/NYT-SHSAT-2017.htm") %>% html_nodes("tr") 
+x <- c()
+for (i in 2:(nrow(nytimes)+1)) {
+  x <- c(x, as.character(  html_attrs(rawHTML[[i]]) [2] ) )
+}
+nytimes$dbn <- x
+
+paste("Total # of schools in the xml = ",  nytimes %>% nrow() )
+paste("# of schools at least 1 student took the SHSAT exam = ",  nytimes$takeExam %>% na.omit() %>% length() )
+paste("# of schools at least get 1 offer after taking the SHSAT exam = ",  nytimes$offer %>% na.omit() %>% length() )
+summary(nytimes)
+
+```
+
++ `COLUMBIA SECONDARY SCHOOL` is the top school for SHSAT in terms of students enroll, register and take the exam among those 28 schools. Almost half of exam-taken students get the offer.   
+
+```{r echo=FALSE}
+
+raw.df.shsat.clean %>% 
+  left_join(nytimes) %>% 
+  filter (year == 2016 & grade == 8) %>% 
+  na.omit() %>% 
+  select( dbn, offer, takeExam) %>% 
+  mutate (offerRate = offer/takeExam)
+
+
+```
+
+#### 2016 NYC public schools general information.
++ Dominate ethnicity of the students present in the schools and their geographical distribution.
++ This wasn't too surprising and basically similar with our understanding about the demographics of New York City. 
+
+```{r echo=FALSE}
+#colnames(raw.df.school.clean)
+ethicalData <- raw.df.school.clean %>% 
+  select(name = school.name, dbn = location.code, longitude, latitude, starts_with("percent.") , - "percent.black./.hispanic") %>% 
+  gather( starts_with("percent.") , key = "Ethnicity", value = "Major") %>% 
+  group_by(name,dbn, latitude, longitude) %>% 
+  na.omit() 
+
+ethicalDataTotalMax <- ethicalData %>% 
+  distinct(dbn, Major) %>% 
+  group_by(dbn) %>% 
+  summarise( maxTotal = max(Major) ) 
+
+ethicalMaxData <- ethicalData %>% 
+  left_join( ethicalDataTotalMax , "dbn" ) %>% 
+  filter ( Major == maxTotal)
+
+
+# make marker with different colors (examples: https://rstudio.github.io/leaflet/markers.html)
+getColor <- function(ethicalMaxData) {
+  sapply(ethicalMaxData$Ethnicity, function(Ethnicity) {
+  if(Ethnicity == "percent.ell") {
+    "red"
+  } else if(Ethnicity == "percent.asian") {
+    "green"
+  } else if(Ethnicity == "percent.black") {
+    "blue"
+  } else if(Ethnicity == "percent.hispanic") {
+    "orange"
+  } else if(Ethnicity == "percent.white") {
+    "white"
+  } else {
+    "black"
+  } })
+}
+
+icons <- awesomeIcons(
+  icon = 'ios-close',
+  iconColor = 'black',
+  library = 'ion',
+  markerColor = as.character(getColor(ethicalMaxData))
+)
+
+leaflet(ethicalMaxData) %>% addTiles() %>% 
+  addAwesomeMarkers(~longitude, ~latitude, icon=icons ,label=~as.character(Major)) %>% 
+  addLegend("bottomright", colors =c("red",  "green", "blue", "orange", "white", "black"),
+  labels= c("ELL", "Asian","Black","Hispanic","White", "Chronically absent"),
+  title= "Major Ethnicity",
+  opacity = 1) %>% 
+  setView(-73.9556488, 40.768978, zoom = 12) -> m
+
+mapshot(m, file = "Data_Analysis_map2_Rplot.png")
+
+
+ethicalMaxData <- ethicalMaxData %>%
+  ungroup() %>% 
+  mutate(ethnicity = Ethnicity, ethnicityRatio = Major) %>% 
+  select(dbn,ethnicity,ethnicityRatio) 
+
+```
+
+```{r ethnic, echo=FALSE, fig.cap="NYC public school largest student ethnic group distribution", out.width = '50%'}
+knitr::include_graphics("Data_Analysis_map2_Rplot.png")
+```
+
+* Find out what could be a good indicators to predict a school that are likely to got the offer from the NYC special high school offer rate after taking the SHSAT test.
+  + **average.ela.proficiency**, **average.math.proficiency** are highly correlated with the **NYC special high school offer rate** as expected. The rest of the indicators do not seem to have strong contribution. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+nums <- unlist(lapply(raw.df.school.clean, is.double))  
+nums[c("location.code","is.community")] = TRUE  #add the location code as key even it is not a numeric column
+subSet <- raw.df.school[ , nums] 
+#summary(subSet)
+
+#ggPairs to plot all against all for the numerically columns. 
+#I only picked couple to illustrate my points. The plot will be too small and busy if I release all potential parameters.
+#
+
+plotData <- subSet %>% 
+  mutate(dbn = location.code) %>% 
+  left_join(nytimes, by="dbn") %>% 
+  mutate (offerRate = offer / takeExam) %>% 
+  select (  ELA = average.ela.proficiency, 
+            MATH = average.math.proficiency,
+#            attendance = student.attendance.rate, 
+            absent = percent.of.students.chronically.absent,
+#            instruction = `rigorous.instruction.%` ,
+#            teachers = `collaborative.teachers.%`, 
+#            environment = `supportive.environment.%`, 
+#            leadership = `effective.school.leadership.%`, 
+            family = `strong.family-community.ties.%`,
+#            trust = `trust.%`,
+            income,
+            comm = is.community,
+            offerRate
+           )
+  
+g <- ggpairs(
+ plotData,
+ mapping = ggplot2::aes(color = offerRate),
+ upper = list(continuous = wrap("density", alpha = 0.5), combo = "box_no_facet"),
+ lower = list(continuous = wrap("points", alpha = 0.3), combo = wrap("dot_no_facet", alpha = 0.4)),
+ title = "NYC public school information"
+)
+
+svg("Data_Analysis_Rplot1.svg", height = 7, width = 12)
+print(g)
+dev.off() ->tmp #remove printing out part.
+
+```
+
+```{r ggallyplot, echo=FALSE, fig.cap="ELA and MATH average proficiency seems to be a strong indicators for entering the special high school ", out.width = '100%'}
+knitr::include_graphics("Data_Analysis_Rplot1.svg")
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+nums <- unlist(lapply(raw.df.school.clean, is.double))  
+nums["location.code"] = TRUE  #add the location code as key even it is not a numeric column
+subSet <- raw.df.school[ , nums] 
+#summary(subSet)
+
+#Seperate out the Ientity and location columns.
+subSetDataProficiency <- subSet %>% 
+  select ( dbn = location.code, 
+            average.ela.proficiency, 
+            average.math.proficiency   
+           ) %>% 
+  gather(key = "prop_attr", value = "prop_est", -dbn) %>% 
+  left_join(nytimes, by="dbn") %>% 
+  mutate (offerRate = offer / takeExam) %>% 
+  select (dbn, prop_attr, prop_est, offerRate) %>% 
+  na.omit() %>% 
+  distinct() %>% 
+  select(dbn, prop_attr, prop_est, offerRate)
+
+ggplot(subSetDataProficiency, aes(x = offerRate, y = prop_est, color = as.factor(prop_attr), fill=as.factor(prop_attr)) )  + 
+  geom_point() + 
+  geom_smooth(method = "lm") + 
+                facet_wrap(~prop_attr)
+
+grade8performance <- raw.df.school.clean %>% 
+  select (dbn = location.code, grade8tested = `grade.8.ela.-.all.students.tested`, grade8ela4 = `grade.8.ela.4s.-.all.students`, grade8math4 = `grade.8.math.4s.-.all.students`  ) %>% 
+  mutate ( grade8ela4ratio = grade8ela4/grade8tested, grade8math4ratio = grade8math4/grade8tested) %>% 
+  select (dbn, grade8ela4ratio, grade8math4ratio) %>% 
+  na.omit() %>% 
+  distinct() %>% 
+  gather(key = "prop_attr", value = "prop_est", -dbn) %>% 
+  left_join(nytimes, by="dbn") %>% 
+  mutate (offerRate = offer / takeExam) %>% 
+  select (dbn, prop_attr, prop_est, offerRate) %>% 
+  na.omit() %>% 
+  distinct() %>% 
+  select(dbn, prop_attr, prop_est, offerRate)
+
+ggplot(grade8performance, aes(x = offerRate, y = prop_est, color = as.factor(prop_attr), fill=as.factor(prop_attr)) )  + 
+  geom_point() + 
+  geom_smooth(method = "lm") + 
+                facet_wrap(~prop_attr)
+
+```
+
+
+#### Muli-linear regression model to predict received SH offer ratio.
+
+- Create a SH offer rate predictor using average ELA and MATH proficiency.
+  + Raw R-squared = 0.66, 10-fold cross validation R-squared = 0.63. The ELA and MATH proficiency explains ~65% variability of the response data.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+school <- raw.df.school %>% 
+  select(dbn = location.code, 
+         ela.proficiency = average.ela.proficiency, 
+         math.proficiency = average.math.proficiency
+         ) %>% 
+  left_join(nytimes, by = "dbn") %>% 
+  arrange(desc(takeExam, offer)) %>% 
+  mutate (offerRate = offer / takeExam) 
+
+schoolWithOfferRateInfo = school %>%  na.omit()
+schoolWithoutOfferRateInfo = school %>% filter(is.na(offerRate))
+
+# Multiple Linear Regression Example 
+fit <- lm(offerRate ~ ela.proficiency + math.proficiency , data=schoolWithOfferRateInfo)
+# summary(fit) # show results
+
+# Plotting the fitting result.
+#layout(matrix(c(1,2,3,4),2,2)) # optional 4 graphs/page 
+#plot(fit)
+
+#Look at R-squared values 
+#R-squared = Explained variation / Total variation
+#R-squared =  0% indicates that the model explains none of the variability of the response data around its mean.
+#R-squared = 100% indicates that the model explains all the variability of the response data around its mean.
+library(bootstrap)
+theta.fit <- function(x,y){lsfit(x,y)}
+theta.predict <- function(fit,x){cbind(1,x)%*%fit$coef} 
+# matrix of predictors
+X <- as.matrix(schoolWithOfferRateInfo[c("ela.proficiency","math.proficiency")])
+# vector of predicted values
+y <- as.matrix(schoolWithOfferRateInfo[c("offerRate")]) 
+results <- crossval(X,y,theta.fit, theta.predict,ngroup=10)
+paste( "Raw R2 = ", cor(y, fit$fitted.values)**2 ) # raw R2 = 0.6582312
+paste("10 fold cross-validated R2 = ", cor(y,results$cv.fit)**2 ) # cross-validated R2 = 0.6337262
+
+# Define two vectors
+x <- fit$fitted.values
+# OLS regression
+ols <- lm(y ~ fit$fitted.values)
+
+# Visualisation
+plot(x,y, xlim = c(0,max(x)), ylim =c(0,max(y)), xlab="predict offer ratio", ylab="offer ratio")    
+abline(ols, col="red")
+tmp <- apply(cbind(x,x,y,predict(ols)),1,function(coords){lines(coords[1:2],coords[3:4])}) -> tmp #direct null result to somewhere else. So, it won't show up when knit.
+
+#residualsDist <-  y - predict(ols) 
+#hist(residualsDist)
+```
+- To validate the model even further, we would like to test the residual normality.  
+  + H₀: Data follow a normal distribution , H₁: Data do not follow a normal distribution.
+  + Based on the tested result, p-value > 0.05 , accept H₀.
+  + Residuals spread randomly around the 0:  indicating the relationship is linear and homogeneity.
+  + No one residual is visibly away from the random pattern of the residuals indicating that there are no outliers. 
+  + Therefore, the model should be able to use to make further prediction.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+# Is OLS following normal distribution ?
+# Do a t.test and compare it with the normal. H₀: Data follow a normal distribution , H₁: Data do not follow a normal distribution.
+library(olsrr)
+paste("Test Residual Normality")
+ols_test_normality(fit)   #Residual Normality Test.
+                          # p-value > 0.05, accept H₀, 
+ols_plot_resid_fit(fit)  # The residuals spread randomly around the 0 line indicating that the relationship is linear.
+                         # The residuals form an approximate horizontal band around the 0 line indicating homogeneity of error variance.
+                         # No one residual is visibly away from the random pattern of the residuals indicating that there are no outliers.
+
+#Conclusion: The residues are follow a normal distribution and spread randomly around the 0. 
+# Model is fine and can be used to make the prediction.
+
+
+# Now making the offerRate prediction with the fit model.
+schoolWithoutOfferRateInfo$predictedOfferRatio = predict(fit, schoolWithoutOfferRateInfo)
+SHofferRatePrediction = schoolWithoutOfferRateInfo %>% select(dbn, predictedOfferRatio)
+
+```
+## Extract columns for shiny visualization.
+
+Here are columns that may be good to put in the shiny interactive display to do the further interactive visualization.
+The field I have choosen are below:
+
+- dbn = location.code  
+- school.name
+- latitude
+- longitude 
+- city
+- zip
+- district
+- income
+- average.ela.proficiency
+- average.math.proficiency
+- nytimes.takeExam
+- nytimes.offer
+- nytimes.offerRate
+- SHofferRatePrediction.predictedOfferRatio  (Model Prediction results for the school didn't have offer # information.)
+- Major ethic group
+- Major ethic group proportion
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+school <- raw.df.school %>% 
+  select(dbn = location.code, 
+         latitude, 
+         longitude, 
+         city, 
+         zip, 
+         district, 
+         income, 
+         ela.proficiency = average.ela.proficiency, 
+         math.proficiency = average.math.proficiency, 
+         school.name,
+         grade8tested = `grade.8.ela.-.all.students.tested`, 
+         grade8ela4 = `grade.8.ela.4s.-.all.students`, 
+         grade8math4 = `grade.8.math.4s.-.all.students`
+         ) %>% 
+  left_join(nytimes, by = "dbn") %>% 
+  mutate (offerRate = offer / takeExam) %>% 
+  left_join(SHofferRatePrediction, by = "dbn") %>% 
+  left_join(ethicalMaxData, by = "dbn") %>% 
+  arrange(desc(takeExam, offer))
+
+saveRDS(school, file = "data/school.rds")
+
+```
+
+#### [**Shiny App**](https://hueyling.shinyapps.io/help-PASSNYC/)
+```{r shinyio, echo=FALSE, fig.cap="Interactive shiny app to recommend school improvment.", out.width = '100%'}
+knitr::include_graphics("www/shinyIO.png")
+```
+
